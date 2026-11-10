@@ -143,10 +143,10 @@ export class Sky {
     this.sun.position.copy(focus).addScaledVector(dir, 150);
     this.sun.target.position.copy(focus);
     if (useSun) { this.sun.color.copy(K.sunWarm).lerp(K.sunWhite, smoothstep(0.05, 0.45, e)); this.sun.intensity = smoothstep(-0.06, 0.15, e) * 2.7 * (1 - o * 0.75); }
-    else { this.sun.color.copy(K.moon); this.sun.intensity = smoothstep(-0.06, -0.2, e) * 0.5 * (1 - o * 0.7); }
+    else { this.sun.color.copy(K.moon); this.sun.intensity = smoothstep(-0.06, -0.2, e) * 0.85 * (1 - o * 0.7); }
     this.hemi.color.copy(K.hemiSkyNight).lerp(K.hemiSkyDay, dayF);
     this.hemi.groundColor.copy(K.hemiGroundNight).lerp(K.hemiGroundDay, dayF);
-    this.hemi.intensity = lerp(0.42, 1.05, dayF) * (1 - o * 0.25) + this.flash * 2.5;
+    this.hemi.intensity = lerp(0.62, 1.05, dayF) * (1 - o * 0.25) + this.flash * 2.5;
 
     // clouds drift with the wind; overcast makes them darker and denser
     const m = this.mat4, wind = dt * (2 + this.w.wind * 9);

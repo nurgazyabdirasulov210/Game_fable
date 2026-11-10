@@ -116,6 +116,7 @@ export class Game {
   private v3 = new THREE.Vector3();
   private exited = false;
   private pauseAt = -1e9;
+  private lockAt = -1e9;
   firstFrame = false;
   /** test hook: when true the frame loop idles and the simulation is driven through step() */
   manual = false;
@@ -265,6 +266,7 @@ export class Game {
     on(document, 'pointerlockchange', () => {
       const was = this.locked;
       this.locked = document.pointerLockElement === this.canvas;
+      this.lockAt = performance.now();
       if (was && !this.locked && !this.hud.panel && this.running) { this.openPause(); this.pauseAt = performance.now(); }
     });
     on(this.canvas, 'mousedown', (e: MouseEvent) => {
@@ -278,6 +280,8 @@ export class Game {
     on(this.canvas, 'contextmenu', (e: Event) => e.preventDefault());
     on(document, 'mousemove', (e: MouseEvent) => {
       if (this.hud.panel || (!this.locked && !this.dragging)) return;
+      // browsers may report one huge bogus delta right after pointer lock engages
+      if (performance.now() - this.lockAt < 150 || Math.abs(e.movementX) > 250 || Math.abs(e.movementY) > 250) return;
       const s = 0.0023 * this.o.settings.sens;
       this.yaw -= e.movementX * s;
       this.pitch = clamp(this.pitch + e.movementY * s * (this.o.settings.invertY ? -1 : 1), -0.45, 1.35);

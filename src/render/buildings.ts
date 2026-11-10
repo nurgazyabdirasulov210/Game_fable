@@ -135,9 +135,9 @@ export class FireFx {
       if (li < this.lights.length && d < 90) {
         const l = this.lights[li++];
         const fl = 1 + Math.sin(time * 11 + li * 3) * 0.12 + Math.sin(time * 23.7 + li) * 0.08;
-        l.position.copy(e.pos); l.position.y += e.kind === 'fire' ? 1.0 : 0.15;
-        l.color.set(e.kind === 'lantern' ? 0xffc46a : 0xff9040);
-        l.intensity = (e.kind === 'fire' ? 34 : e.kind === 'torch' ? 26 : 12) * fl;
+        l.position.copy(e.pos); l.position.y += e.kind === 'fire' ? 1.0 : 0.6;
+        l.color.set(e.kind === 'lantern' ? 0xffd08a : e.kind === 'torch' ? 0xffb878 : 0xffa058);
+        l.intensity = (e.kind === 'fire' ? 30 : e.kind === 'torch' ? 15 : 10) * fl;
         l.distance = e.kind === 'fire' ? 30 : e.kind === 'torch' ? 26 : 16;
       }
       if (e.kind !== 'fire' || fires >= FireFx.MAX_FIRES || d > 130) continue;

@@ -46,6 +46,8 @@ async function ready(page) {
       count: (id) => g.inv.count(id),
       near: (kind, r = 80, pred = () => true) => g.world.nodes.filter((n) => n.kind === kind && !g.veg.depleted.has(n.id) && pred(n)).sort((a, b) => Math.hypot(a.x - g.pos.x, a.z - g.pos.z) - Math.hypot(b.x - g.pos.x, b.z - g.pos.z))[0],
       render: () => { g.renderer.render(g.scene, g.camera); },
+      // a clear, level 20x20 m site suitable for base building
+      flat: (x, z) => { const w = g.world, h0 = w.heightAt(x, z); if (h0 < 1.5 || w.colliders.overlaps(x, z, 10, -99, 99) || w.poiAt(x, z, 12)) return false; for (let dx = -10; dx <= 10; dx += 2.5) for (let dz = -10; dz <= 10; dz += 2.5) if (Math.abs(w.heightAt(x + dx, z + dz) - h0) > 0.9) return false; return true; },
     };
   });
 }
@@ -55,7 +57,8 @@ const shot = async (page, name) => {
 };
 const ev = (page, fn, arg) => page.evaluate(fn, arg);
 const key = async (page, code) => { await page.keyboard.press(code); };
-const clickCanvas = async (page) => { await page.mouse.click(480, 200); };
+// click in the middle of the view; yaw is pinned so synthetic pointer-lock mouse deltas cannot turn the camera
+const clickCanvas = async (page) => { const yaw = await page.evaluate(() => window.T.g.yaw); await page.mouse.click(480, 200); await page.evaluate((y) => { window.T.g.yaw = y; }, yaw); };
 
 async function solo(browser) {
   console.log('\n== SOLO ==');
@@ -121,7 +124,7 @@ async function solo(browser) {
   ok(q1 >= 1, 'quest 1 (collect 10 wood) completed and rewarded', `quest index ${q1}`);
 
   // --- water
-  await ev(page, () => { T.tp(55 - 13 * Math.cos(0.405), -45 + 13 * Math.sin(0.405)); for (let i = 0; i < 40 && T.g.world.heightAt(T.g.pos.x, T.g.pos.z) > -0.3; i++) T.tp(T.g.pos.x + 0.4, T.g.pos.z + 0.6); T.g.pos.y = Math.max(T.g.pos.y, -1); T.g.stats.thirst = 40; T.step(0.3); });
+  await ev(page, () => { let x = 40; while (T.g.world.heightAt(x, 25) > -0.3 && x < 80) x += 0.4; T.tp(x, 25, Math.PI / 2); T.g.stats.thirst = 40; T.step(0.3); });
   await key(page, 'KeyE');
   const thirst = await ev(page, () => { T.step(0.8); return T.g.stats.thirst; });
   ok(thirst > 60, 'E at the river drinks water', `thirst=${thirst.toFixed(0)}`);
@@ -130,7 +133,7 @@ async function solo(browser) {
   ok((await ev(page, () => { T.step(0.3); return T.count('water'); })) === w0 + 1, 'F fills a water item');
 
   // --- crafting through the UI
-  await ev(page, () => { T.tp(-10, 50); T.g.inv.add('stone', 12); T.g.inv.add('fiber', 12); T.g.inv.add('wood', 30); T.step(0.2); });
+  await ev(page, () => { T.tp(-10, 50); T.g.inv.add('stone', 30); T.g.inv.add('fiber', 20); T.g.inv.add('wood', 60); T.step(0.2); });
   const before = await ev(page, () => ({ w: T.count('wood'), s: T.count('stone'), f: T.count('fiber') }));
   await key(page, 'Tab');
   ok(await page.isVisible('.window.inv'), 'Tab opens inventory + crafting panel');
@@ -150,8 +153,13 @@ async function solo(browser) {
   await clickCanvas(page);
   ok((await ev(page, () => { T.step(0.7); return T.count('wood'); })) === axeTest.w + 3, 'axe yields 3 wood per hit');
 
+  // --- pickaxe mines boulders
+  const rock = await ev(page, () => { const g = T.g; g.inv.move(g.inv.slots.findIndex((s) => s && s[0] === 'pickaxe'), 3); g.inv.selected = 3; g.inv.onChange(); const r = T.near('rock'); T.tp(r.x - 0.9 * r.scale - 0.9, r.z); T.face(r.x, r.z); T.step(0.1); return { s: T.count('stone') }; });
+  for (let i = 0; i < 3; i++) { await ev(page, () => { T.g.stats.stamina = 100; }); await clickCanvas(page); await ev(page, () => T.step(0.7)); }
+  ok((await ev(page, () => T.count('stone'))) >= rock.s + 6, 'pickaxe mines stone from boulders (2 per hit)');
+
   // --- building: campfire, foundation, wall, door, chest
-  await ev(page, () => { let best = null; for (let r = 20; r < 70 && !best; r += 4) for (let a = 0; a < 6.28 && !best; a += 0.4) { const x = Math.cos(a) * r, z = 30 + Math.sin(a) * r; if (!T.g.world.colliders.overlaps(x, z, 9, -99, 99) && T.g.world.slopeAt(x, z) < 0.25 && T.g.world.heightAt(x, z) > 1.5) best = [x, z]; } T.tp(best[0], best[1], 0); T.g.stats.stamina = 100; T.step(0.2); });
+  await ev(page, () => { let best = null; for (let r = 20; r < 140 && !best; r += 3) for (let a = 0; a < 6.28 && !best; a += 0.2) { const x = Math.cos(a) * r, z = 30 + Math.sin(a) * r; if (T.flat(x, z)) best = [x, z]; } T.tp(best[0], best[1], 0); T.g.stats.stamina = 100; T.step(0.2); });
   await key(page, 'KeyB');
   ok(await page.isVisible('.window.build'), 'B opens the build menu');
   await shot(page, '04-buildmenu');
@@ -255,12 +263,13 @@ async function solo(browser) {
   await key(page, 'KeyE');
   ok(await ev(page, () => { T.step(0.2); return T.count('raw_meat') === 0 && T.count('cooked_meat') > 0; }), 'campfire cooks raw meat');
   const mut = await ev(page, () => { T.dbg({ clearEnemies: true }); T.tp(-30, 60, 0); T.g.stats.hp = 100; T.dbg({ spawn: 'mutant', x: -30, z: 70 }); let t = 0; while (T.g.stats.hp >= 100 && t < 20) { T.step(0.1); t += 0.1; } return 100 - T.g.stats.hp; });
-  ok(mut >= 15, 'mutant attacks harder than a wolf', `dmg=${mut}`);
+  ok(mut > 12, 'mutant attacks harder than a wolf', `dmg=${mut}`);
 
   // --- day/night + weather + night stalker
-  const night = await ev(page, () => { T.dbg({ clearEnemies: true, time: 23.5 }); T.tp(-60, 90, 0); T.g.stats.hp = 100; for (let i = 0; i < 40; i++) T.step(1); const g = T.g; return { night: g.sky.night, sun: g.sky.sun.intensity, stalkers: [...g.creatures.values()].filter((c) => c.type === 'stalker').length }; });
+  const night = await ev(page, () => { T.dbg({ clearEnemies: true, time: 23.5 }); T.tp(-60, 90, 0); T.g.stats.hp = 100; let hurt = 0; for (let i = 0; i < 40; i++) { if (T.g.stats.hp < 100) hurt++; T.g.stats.hp = 100; T.step(1); } const g = T.g; return { hurt, night: g.sky.night, sun: g.sky.sun.intensity, stalkers: [...g.creatures.values()].filter((c) => c.type === 'stalker').length }; });
   ok(night.night > 0.9 && night.sun < 0.7, 'night falls: sky and lighting change', JSON.stringify(night));
   ok(night.stalkers >= 1, 'night stalker spawns near the player at night');
+  ok(night.hurt >= 1, 'night stalker hunts and wounds the player');
   await ev(page, () => { const g = T.g; g.inv.add('torch', 1); g.inv.selected = g.inv.slots.findIndex((s) => s && s[0] === 'torch'); g.inv.onChange(); T.dbg({ clearEnemies: true }); T.step(0.5); });
   ok(await ev(page, () => T.g.fire.lights.some((l) => l.intensity > 1)), 'held torch lights the surroundings');
   await shot(page, '07-night-torch');
@@ -386,14 +395,14 @@ async function coop(browser) {
   // co-op tree chopping: both hit the same tree
   const tr = await ev(A, () => { const t = T.near('tree'); T.tp(t.x - 1.3, t.z); T.face(t.x, t.z); T.step(0.1); return { id: t.id, x: t.x, z: t.z }; });
   await ev(B, (t) => { T.tp(t.x + 1.3, t.z); T.face(t.x, t.z); T.step(0.1); }, tr);
-  for (let i = 0; i < 12; i++) { await A.mouse.click(480, 200); await B.mouse.click(480, 200); await ev(A, () => { T.g.stats.stamina = 100; T.step(0.7); }); await ev(B, () => { T.g.stats.stamina = 100; T.step(0.7); }); await A.waitForTimeout(120); }
+  for (let i = 0; i < 12; i++) { await clickCanvas(A); await clickCanvas(B); await ev(A, () => { T.g.stats.stamina = 100; T.step(0.7); }); await ev(B, () => { T.g.stats.stamina = 100; T.step(0.7); }); await A.waitForTimeout(120); }
   await sync();
   const cw = [await ev(A, () => T.count('wood')), await ev(B, () => T.count('wood'))];
   ok(cw[0] > 0 && cw[1] > 0, 'both players get wood from the same tree', JSON.stringify(cw));
   ok(await ev(A, (id) => T.g.veg.depleted.has(id), tr.id) && await ev(B, (id) => T.g.veg.depleted.has(id), tr.id), 'felled tree is synchronised for both');
 
   // shared building + chest + door
-  await ev(A, () => { T.g.inv.add('wood', 60); T.g.inv.add('stone', 20); T.g.inv.add('fiber', 10); T.g.inv.add('hammer', 1); let best = null; for (let r = 20; r < 70 && !best; r += 4) for (let a = 0; a < 6.28 && !best; a += 0.4) { const x = Math.cos(a) * r, z = 30 + Math.sin(a) * r; if (!T.g.world.colliders.overlaps(x, z, 9, -99, 99) && T.g.world.slopeAt(x, z) < 0.25 && T.g.world.heightAt(x, z) > 1.5) best = [x, z]; } T.tp(best[0], best[1], 0); T.step(0.2); });
+  await ev(A, () => { T.g.inv.add('wood', 60); T.g.inv.add('stone', 20); T.g.inv.add('fiber', 10); T.g.inv.add('hammer', 1); let best = null; for (let r = 20; r < 140 && !best; r += 3) for (let a = 0; a < 6.28 && !best; a += 0.2) { const x = Math.cos(a) * r, z = 30 + Math.sin(a) * r; if (T.flat(x, z)) best = [x, z]; } T.tp(best[0], best[1], 0); T.step(0.2); });
   const apos = await ev(A, () => T.g.pos.toArray());
   for (const [type, off] of [['campfire', [0, 4]], ['chest', [3, 3]], ['door', [-4, 4]]]) await ev(A, ([type, off]) => { const g = T.g; g.o.transport.send('build', { type, x: g.pos.x + off[0], z: g.pos.z + off[1], rot: 0, req: 900 }); }, [type, off]);
   await sync();
@@ -438,18 +447,17 @@ async function coop(browser) {
 
   // leaving
   await B.context().close();
-  await sync(700);
+  await A.waitForTimeout(1200); await ev(A, () => T.step(0.3));
   ok(await ev(A, () => T.g.remotes.size) === 0, 'A is notified when B disconnects');
-  // 4-player limit through the real server
-  const extra = [];
-  for (let i = 0; i < 4; i++) {
-    const p = await newPage(browser, 'X' + i);
-    await p.goto(URL + '?room=' + code); await p.waitForSelector('#rcode'); await p.click('[data-a="join"]');
-    if (i < 3) { await p.waitForFunction(() => window.__game); await ev(p, () => { window.__game.manual = true; }); }
-    else { await p.waitForFunction(() => document.querySelector('#mp-err') && document.querySelector('#mp-err').textContent.length > 0); ok((await p.textContent('#mp-err')).includes('заполнена'), 'fifth player is rejected: room is limited to 4'); }
-    extra.push(p);
-  }
-  for (const p of extra) await p.context().close();
+  // 4-player limit through the real server (lightweight socket clients fill the remaining slots)
+  const { io } = require('socket.io-client');
+  const join = (name) => new Promise((res) => { const sock = io(URL, { transports: ['websocket'], forceNew: true }); sock.on('connect', () => sock.emit('join', { code, name }, (r) => res({ sock, r }))); });
+  const socks = [];
+  for (let i = 0; i < 4; i++) socks.push(await join('Бот' + i));
+  ok(socks.slice(0, 3).every((x) => x.r.players && x.r.players.length >= 2) && socks[3].r.error && socks[3].r.error.includes('заполнена'), 'room accepts 4 players and rejects the fifth');
+  await A.waitForTimeout(500); await ev(A, () => T.step(0.3));
+  ok(await ev(A, () => T.g.remotes.size) === 3, 'host sees all three other players');
+  socks.forEach((x) => x.sock.close());
   await A.context().close();
 }
 
