@@ -272,7 +272,7 @@ export class Game {
     on(this.canvas, 'mousedown', (e: MouseEvent) => {
       this.o.audio.init();
       if (this.hud.panel) return;
-      if (!this.locked) { this.lock(); this.dragging = true; if (e.button !== 0) return; }
+      if (!this.locked) { this.lock(); this.dragging = true; }
       if (e.button === 0) this.primary();
       else if (e.button === 2 && this.build) this.exitBuild();
     });
