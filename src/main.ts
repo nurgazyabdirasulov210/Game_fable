@@ -3,7 +3,7 @@ import './style.css';
 import { AudioSys } from './audio';
 import { Game } from './game';
 import { LocalTransport, SocketTransport, type Transport } from './net';
-import { clearSave, loadSave } from './save';
+import { clearSave, lastMpRoom, loadMpSave, loadSave, type PlayerSave } from './save';
 import { loadSettings, saveSettings } from './settings';
 import { CONTROLS_HTML, settingsForm } from './ui/hud';
 import { startMenuBackground } from './ui/menubg';
@@ -101,13 +101,15 @@ function newGameDialog() {
 }
 
 function friendsDialog(prefill = '') {
+  const last = lastMpRoom();
   const d = dialog('Играть с друзьями', `${nameField()}
     <div class="mp-cols">
       <div class="mp-card"><h3>Создать комнату</h3><p>Вы получите код комнаты и ссылку-приглашение для друзей.</p><button class="btn" data-a="create">Создать комнату</button></div>
       <div class="mp-card"><h3>Войти по коду</h3><label class="field"><span>Код комнаты</span><input id="rcode" maxlength="5" placeholder="ABCDE" value="${prefill.replace(/[^A-Z0-9]/g, '')}" autocomplete="off"></label><button class="btn" data-a="join">Присоединиться</button></div>
     </div>
+    ${last ? `<div class="invite rejoin"><span>Последняя комната</span><b>${last.code}</b><button class="btn small" data-a="rejoin">Вернуться</button></div>` : ''}
     <p class="err" id="mp-err"></p>
-    <p class="hint">Общий мир: ресурсы, постройки, враги, время суток и погода синхронизируются сервером. Требуется запущенный сервер игры (<code>npm run dev</code> или <code>npm start</code>).</p>`);
+    <p class="hint">Общий мир: ресурсы, постройки, враги, время суток и погода синхронизируются сервером. Мир комнаты сохраняется на сервере, а ваш инвентарь и задания — в браузере: в комнату можно вернуться по тому же коду. Требуется запущенный сервер игры (<code>npm run dev</code> или <code>npm start</code>).</p>`);
   const err = d.querySelector<HTMLElement>('#mp-err')!;
   const code = d.querySelector<HTMLInputElement>('#rcode')!;
   code.addEventListener('input', () => (code.value = code.value.toUpperCase().replace(/[^A-Z0-9]/g, '')));
@@ -119,6 +121,7 @@ function friendsDialog(prefill = '') {
     if (e) { const again = screens.querySelector<HTMLElement>('#mp-err'); if (again) again.textContent = e; audio.error(); }
   };
   d.querySelector('[data-a="create"]')!.addEventListener('click', () => void go('create'));
+  d.querySelector('[data-a="rejoin"]')?.addEventListener('click', () => { code.value = last!.code; void go('join'); });
   d.querySelector('[data-a="join"]')!.addEventListener('click', () => void go('join'));
   code.addEventListener('keydown', (e) => { if (e.key === 'Enter') void go('join'); });
 }
@@ -150,14 +153,15 @@ async function start(mode: 'new' | 'continue' | 'create' | 'join', name = settin
   await nextFrame();
   let transport: Transport;
   const save = mode === 'continue' ? loadSave() : null;
+  let mpPlayer: PlayerSave | null = null;
   try {
-    if (mode === 'create' || mode === 'join') { transport = await SocketTransport.connect(mode, name, code); showLoading('Генерация мира…'); await nextFrame(); }
+    if (mode === 'create' || mode === 'join') { transport = await SocketTransport.connect(mode, name, code); mpPlayer = loadMpSave(transport.snapshot.code)?.player ?? null; showLoading('Генерация мира…'); await nextFrame(); }
     else transport = new LocalTransport(save?.name ?? name, save?.room);
   } catch (e) { hideLoading(); return (e as Error).message || 'Не удалось подключиться'; }
   try {
     audio.stopMusic();
     game = new Game({
-      mount: view, transport, settings, audio, name: save?.name ?? name, save: save?.player ?? null,
+      mount: view, transport, settings, audio, name: save?.name ?? name, save: save?.player ?? mpPlayer,
       onExit: (reason) => { game = null; history.replaceState(null, '', location.pathname); gesture(); showMenu(reason); },
     });
     game.onSettings = persist;

@@ -12,6 +12,15 @@ const root = path.join(__dirname, '..');
 const shots = path.join(__dirname, 'shots');
 fs.mkdirSync(shots, { recursive: true });
 
+const dataDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'emberfield-test-'));
+let server = null;
+async function startServer() {
+  server = spawn(process.execPath, [path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'), path.join(root, 'server', 'index.ts')], { env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir }, stdio: ['ignore', 'pipe', 'inherit'] });
+  const srv = server;
+  await new Promise((res, rej) => { srv.stdout.on('data', (d) => { if (String(d).includes('listening')) res(); }); srv.on('exit', () => rej(new Error('server exited'))); setTimeout(() => rej(new Error('server start timeout')), 20000); });
+}
+async function stopServer() { const srv = server; server = null; await new Promise((res) => { srv.removeAllListeners('exit'); srv.on('exit', res); srv.kill('SIGTERM'); }); }
+
 let passed = 0;
 const errors = [];
 function ok(cond, name, extra = '') {
@@ -459,13 +468,30 @@ async function coop(browser) {
   await A.waitForTimeout(500); await ev(A, () => T.step(0.3));
   ok(await ev(A, () => T.g.remotes.size) === 3, 'host sees all three other players');
   socks.forEach((x) => x.sock.close());
+
+  // persistence: leave the room, restart the server, come back with the same code
+  const mine = await ev(A, () => ({ wood: T.count('wood'), hammer: T.count('hammer'), nb: T.g.buildings.size, dep: T.g.veg.depleted.size, x: T.g.pos.x }));
+  await A.keyboard.press('Escape');
+  await A.click('[data-act="exit"]');
+  await A.waitForSelector('.menu nav');
+  await A.waitForTimeout(400);
+  await stopServer();
+  ok(fs.existsSync(path.join(dataDir, code + '.json')), 'room world is written to disk on the server');
+  await startServer();
+  await A.click('[data-a="friends"]');
+  ok((await A.textContent('.rejoin')).includes(code), 'lobby offers to return to the last room');
+  await A.click('[data-a="rejoin"]');
+  await ready(A);
+  const back = await ev(A, () => ({ wood: T.count('wood'), hammer: T.count('hammer'), nb: T.g.buildings.size, dep: T.g.veg.depleted.size, x: T.g.pos.x }));
+  ok(back.nb === mine.nb && back.dep === mine.dep, 'after a server restart the room keeps its buildings and harvested nodes', JSON.stringify([mine, back]));
+  ok(back.wood === mine.wood && back.hammer === mine.hammer && Math.abs(back.x - mine.x) < 0.5, 'personal inventory and position are restored when rejoining the room');
+  ok(await ev(A, () => [...T.g.buildings.values()].some((b) => b.type === 'chest' && Array.isArray(b.items))), 'chest contents survive the restart');
   await A.context().close();
 }
 
 (async () => {
   if (!fs.existsSync(path.join(root, 'dist', 'index.html'))) { console.error('dist/ not found. Run "npm run build" first.'); process.exit(1); }
-  const server = spawn(process.execPath, [path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'), path.join(root, 'server', 'index.ts')], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'inherit'] });
-  await new Promise((res, rej) => { server.stdout.on('data', (d) => { if (String(d).includes('listening')) res(); }); server.on('exit', () => rej(new Error('server exited'))); setTimeout(() => rej(new Error('server start timeout')), 20000); });
+  await startServer();
   const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   let code = 0;
   try {
@@ -478,6 +504,7 @@ async function coop(browser) {
     console.log(`\n${passed} end-to-end checks passed. Screenshots: tests/shots/`);
   } catch (e) { console.error('\n' + (e.stack || e)); console.error(errors.slice(0, 8).join('\n')); code = 1; }
   await browser.close().catch(() => {});
-  server.kill();
+  if (server) await stopServer();
+  fs.rmSync(dataDir, { recursive: true, force: true });
   process.exit(code);
 })();

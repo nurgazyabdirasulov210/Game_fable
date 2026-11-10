@@ -11,7 +11,7 @@ import type { AudioSys } from './audio';
 import { Inventory } from './inventory';
 import type { Transport } from './net';
 import { QUESTS } from './quests';
-import { writeSave, type PlayerSave } from './save';
+import { writeMpSave, writeSave, type PlayerSave } from './save';
 import type { Settings } from './settings';
 import { Buildings, FireFx, Particles, WeatherFx, type Emitter } from './render/buildings';
 import { A_DEAD, A_IDLE, A_JUMP, A_RUN, A_SWIM, A_SWING, A_WALK, Creature, Humanoid, nameTag } from './render/character';
@@ -213,18 +213,20 @@ export class Game {
     this.tally = { ...s.stats }; this.won = s.won;
   }
 
+  private playerSave(): PlayerSave {
+    return {
+      x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw,
+      hp: this.dead ? 60 : this.stats.hp, hunger: this.stats.hunger, thirst: this.stats.thirst, stamina: this.stats.stamina,
+      slots: this.inv.slots, selected: this.inv.selected, quest: this.quest, counters: this.counters,
+      discovered: [...this.discovered], stats: this.tally, won: this.won,
+    };
+  }
+
+  /** Solo: world + player to localStorage. Co-op: the server keeps the world, personal progress is stored per room code. */
   saveGame(): boolean {
     const room = this.o.transport.serialize();
-    if (!room) return false;
-    return writeSave({
-      v: 1, name: this.o.name, savedAt: Date.now(), room,
-      player: {
-        x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw,
-        hp: this.dead ? 60 : this.stats.hp, hunger: this.stats.hunger, thirst: this.stats.thirst, stamina: this.stats.stamina,
-        slots: this.inv.slots, selected: this.inv.selected, quest: this.quest, counters: this.counters,
-        discovered: [...this.discovered], stats: this.tally, won: this.won,
-      },
-    });
+    if (!room) return writeMpSave({ v: 1, code: this.o.transport.snapshot.code, name: this.o.name, savedAt: Date.now(), player: this.playerSave() });
+    return writeSave({ v: 1, name: this.o.name, savedAt: Date.now(), room, player: this.playerSave() });
   }
 
   exit(reason?: string) {
