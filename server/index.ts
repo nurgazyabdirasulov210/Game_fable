@@ -10,7 +10,7 @@ import { Room } from '../shared/room';
 const PORT = Number(process.env.PORT ?? 3001);
 const TICK = 1 / 20;
 const dist = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
-const serve = existsSync(dist) ? sirv(dist, { single: true }) : null;
+const serve = existsSync(dist) ? sirv(dist, { single: true, dev: true }) : null;
 
 const http = createServer((req, res) => {
   if (req.url === '/health') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true, rooms: rooms.size })); return; }
