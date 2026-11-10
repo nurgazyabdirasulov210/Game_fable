@@ -1,0 +1,32 @@
+{
+  "name": "emberfield",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "EMBERFIELD — 3D co-op survival prototype (Three.js + Socket.IO)",
+  "scripts": {
+    "dev": "concurrently -k -n server,client \"tsx watch server/index.ts\" \"vite\"",
+    "dev:client": "vite",
+    "dev:server": "tsx watch server/index.ts",
+    "build": "tsc --noEmit && vite build",
+    "start": "tsx server/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test:sim": "tsx tests/sim.test.ts",
+    "test:e2e": "node tests/e2e.mjs",
+    "test": "npm run test:sim && npm run test:e2e"
+  },
+  "dependencies": {
+    "sirv": "^3.0.2",
+    "socket.io": "^4.8.4",
+    "socket.io-client": "^4.8.4",
+    "three": "^0.187.0",
+    "tsx": "^4.23.15"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/three": "^0.187.0",
+    "concurrently": "^10.0.7",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.7"
+  }
+}
